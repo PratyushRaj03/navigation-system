@@ -2,6 +2,8 @@
 
 A high-performance, modular, production-ready web application for visualizing and navigating to a large database of ~4,345 store/outlet locations using **pure HTML5, CSS3, and Vanilla JavaScript (ES6 Modules)**.
 
+🔗 **Live Deployment:** [https://navigation-system3.vercel.app/](https://navigation-system3.vercel.app/)
+
 ---
 
 ## Key Highlights & Architectural Guarantees
