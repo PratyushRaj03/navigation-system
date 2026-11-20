@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>FleetNav Pro | Outlet Intelligence & Traffic-Aware Navigation System</title>
+  <meta name="description" content="Production-quality store and outlet visualization platform featuring high-capacity clustering, deterministic customer color coding, and TomTom traffic-aware navigation.">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <!-- Leaflet MarkerCluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  
+  <!-- Application CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Loading Splash Screen -->
+  <div id="app-loading-screen">
+    <div class="loader-spinner"></div>
+    <div class="loading-progress-container">
+      <div id="loading-progress-bar" class="loading-progress-bar"></div>
+    </div>
+    <div id="loading-status-text">Loading dataset and routing engine...</div>
+  </div>
+
+  <!-- Toast Notification System -->
+  <div id="toast-container"></div>
+
+  <!-- Main Application Container -->
+  <div id="app-container">
+
+    <!-- Left Sidebar -->
+    <aside id="app-sidebar">
+      
+      <!-- Sidebar Header -->
+      <div class="sidebar-header">
+        <div class="brand-wrapper">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+              <polyline points="2 17 12 22 22 17"/>
+              <polyline points="2 12 12 17 22 12"/>
+            </svg>
+          </div>
+          <div>
+            <div class="brand-title">FLEETNAV <span class="brand-badge-elite">PRO</span></div>
+            <div class="brand-subtitle"><span class="status-radar-dot"></span> ENTERPRISE COMMAND • NCR</div>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button id="btn-open-settings" class="icon-btn" title="Preferences & Theme" aria-label="Open Settings">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+            </svg>
+          </button>
+          <button id="btn-sidebar-toggle" class="icon-btn" title="Collapse Sidebar" aria-label="Toggle Sidebar">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+
+      <!-- Sidebar Body -->
+      <div class="sidebar-body">
+
+        <!-- Search Box (Universal Worldwide Search) -->
+        <div class="search-section">
+          <div class="search-input-wrapper">
+            <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" id="search-input" class="search-input" placeholder="Search any place, apartment, park, address..." autocomplete="off" spellcheck="false">
+            <button id="search-clear-btn" class="search-clear-btn" title="Clear Search">&times;</button>
+            <button id="search-submit-btn" class="search-submit-btn" title="Search Anywhere in the World" aria-label="Search Worldwide">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <span>Search</span>
+            </button>
+          </div>
+
+          <!-- Search Dropdown Results -->
+          <div id="search-results" class="search-results-dropdown"></div>
+        </div>
+
+        <!-- Dashboard Statistics -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-header-row">
+              <span class="stat-label">Total Outlets</span>
+              <span class="stat-pill-tag">ACTIVE</span>
+            </div>
+            <span id="stat-total-outlets" class="stat-value">...</span>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header-row">
+              <span class="stat-label">Key Accounts</span>
+              <span class="stat-pill-tag">CLIENTS</span>
+            </div>
+            <span id="stat-total-customers" class="stat-value">...</span>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header-row">
+              <span class="stat-label">Districts</span>
+              <span class="stat-pill-tag">REGIONS</span>
+            </div>
+            <span id="stat-total-districts" class="stat-value">...</span>
+          </div>
+          <div class="stat-card highlight">
+            <div class="stat-header-row">
+              <span class="stat-label">Viewport Focus</span>
+              <span class="stat-radar-badge"><span class="status-radar-dot"></span> LIVE</span>
+            </div>
+            <span id="stat-visible-outlets" class="stat-value">...</span>
+          </div>
+        </div>
+
+        <!-- Filters Section -->
+        <div class="collapsible-section" id="filter-panel">
+          <div class="section-header" title="Click to collapse or expand filters">
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+              </svg>
+              <span>Filters</span>
+              <span id="active-filters-count" class="section-badge" style="display: none;">0</span>
+            </div>
+            <span class="section-toggle-icon">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
+            </span>
+          </div>
+          <div class="section-body">
+            
+            <!-- District Filter -->
+            <div class="filter-group">
+              <div class="filter-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <div class="filter-group-title" style="margin-bottom: 0;">District (DIST_NAME)</div>
+                <button type="button" id="btn-toggle-all-districts" class="btn-small" style="padding: 2px 8px; font-size: 0.68rem;">Toggle All DBs</button>
+              </div>
+              <div id="filter-districts-list" class="filter-pills-container"></div>
+            </div>
+
+            <!-- Outlet Type Filter -->
+            <div class="filter-group">
+              <div class="filter-group-title">Outlet Type (KEYACCGRP2_DESC)</div>
+              <div id="filter-types-list" class="filter-pills-container"></div>
+            </div>
+
+            <!-- Specific Customer Filter -->
+            <div class="filter-group">
+              <div class="filter-group-title">Specific Customer (Combined Across DBs)</div>
+              <input type="text" id="filter-customer-search-input" class="search-input" style="padding: 6px 10px; margin-bottom: 6px; font-size: 0.78rem;" placeholder="Search & filter customer list...">
+              <select id="filter-customer-select" class="select-dropdown">
+                <option value="">-- All Customers --</option>
+              </select>
+            </div>
+
+
+            <!-- Filter Action Buttons -->
+            <div class="filter-actions">
+              <button id="btn-clear-filters" class="btn-secondary">Clear Filters</button>
+              <button id="btn-apply-filters" class="btn-secondary" style="background: rgba(56,189,248,0.15); color: #38bdf8; border-color: rgba(56,189,248,0.3);">Apply</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Customer Legend Section -->
+        <div class="collapsible-section legend-section">
+          <div class="section-header" title="Click to collapse or expand customer legend">
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+              </svg>
+              <span>Customer Legend</span>
+            </div>
+            <span class="section-toggle-icon">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
+            </span>
+          </div>
+          <div class="section-body" style="flex: 1; display: flex; flex-direction: column;">
+            <div class="legend-controls">
+              <input type="text" id="legend-search-input" class="legend-search" placeholder="Filter customer list...">
+              <button id="btn-legend-sort" class="btn-small" title="Toggle sorting order">🔢 By Count</button>
+              <button id="btn-legend-show-all" class="btn-small" title="Restore all customer marker opacity">Show All</button>
+            </div>
+            <!-- Scrollable Customer List with Colors and Counts -->
+            <div id="legend-customer-list" class="legend-list"></div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- Mobile Drawer Backdrop Overlay -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+
+    <!-- Center Interactive Map Container -->
+    <main id="map-container">
+      
+      <!-- Leaflet Map Mount Point -->
+      <div id="map"></div>
+
+      <!-- Floating Map Header Controls -->
+      <div class="map-floating-controls">
+        <button id="btn-mobile-menu" class="btn-floating-pill" title="Toggle Dashboard Sidebar">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+          <span class="btn-pill-text">Dashboard</span>
+        </button>
+
+        <!-- Quick Map Density & Layer Switcher Pill -->
+        <div class="map-layer-switcher-pill" id="map-quick-layers">
+          <button type="button" class="layer-pill-btn active" data-layer="google_streets" title="Google Maps Streets (High Density & Buildings)">🏢 Buildings</button>
+          <button type="button" class="layer-pill-btn" data-layer="google_hybrid" title="Google Maps Satellite (Real Rooftops & Structures)">🛰️ Satellite</button>
+          <button type="button" class="layer-pill-btn" data-layer="tomtom_dark" title="Dark Logistics Cartography">🌙 Dark</button>
+        </div>
+
+        <button id="btn-location-status" class="btn-floating-pill location-status-btn prompt" title="Location Status - Click for details">
+          <span class="location-pulse-dot"></span>
+          <span id="location-status-label" class="btn-pill-text">GPS: Checking...</span>
+        </button>
+
+        <button id="btn-locate-me" class="btn-floating-icon" title="Center on My Location" aria-label="Locate Me">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
+          </svg>
+        </button>
+
+        <button id="btn-reset-view" class="btn-floating-icon" title="Fit All Outlets in View" aria-label="Fit All">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>
+          </svg>
+        </button>
+
+        <button id="btn-open-settings-floating" class="btn-floating-icon" title="Map & Routing Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Floating Live Navigation HUD -->
+      <div id="navigation-hud">
+        
+        <div class="nav-hud-top-group">
+          <!-- Top Turn-by-Turn Instruction Banner -->
+          <div class="nav-maneuver-card">
+            <div class="nav-maneuver-icon-box" id="nav-maneuver-icon">
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
+                <path d="M12 2L4.5 9.5l1.4 1.4L11 5.8V22h2V5.8l5.1 5.1 1.4-1.4L12 2z"/>
+              </svg>
+            </div>
+            <div class="nav-instruction-details">
+              <div class="nav-turn-distance" id="nav-turn-distance">--</div>
+              <div class="nav-instruction-text" id="nav-instruction-text">Starting navigation...</div>
+            </div>
+          </div>
+
+          <!-- Route Alternatives Switcher Tabs -->
+          <div id="nav-route-tabs" class="nav-route-tabs"></div>
+
+          <!-- Simulation Controls (for testing live driving & wrong turn rerouting) -->
+          <div id="sim-controls-panel" class="sim-controls-panel">
+            <span>🚗 Simulation Active</span>
+            <div class="sim-btn-group">
+              <button id="btn-sim-speed" class="btn-sim-action" title="Cycle simulation speed">1x</button>
+              <button id="btn-sim-deviate" class="btn-sim-action btn-wrong-turn-action" title="Take an intentional wrong turn down another street to test Google Maps rerouting">⚠️ Test Wrong Turn</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Navigation Metrics Status Bar -->
+        <div class="nav-status-card">
+          <!-- Row 1: Destination & Live Traffic -->
+          <div class="nav-dest-row">
+            <div class="nav-dest-summary" id="nav-dest-summary-btn" role="button" tabindex="0" title="Click to expand or collapse outlet details">
+              <div class="nav-dest-title" id="nav-dest-name">Destination</div>
+              <div class="nav-dest-sub" id="nav-dest-sub">Address • Category</div>
+            </div>
+            <div class="nav-dest-actions">
+              <button type="button" id="btn-toggle-nav-outlet-info" class="btn-nav-info-toggle" title="Toggle Outlet Details Window" aria-label="Toggle Outlet Details">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                <span>Outlet Info</span>
+              </button>
+              <div id="nav-traffic-delay" class="traffic-badge on-time">
+                <span class="traffic-dot"></span>
+                <span>Fastest route</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 2: Navigation Metrics & Controls -->
+          <div class="nav-metrics-row">
+            <div class="nav-metrics-group">
+              <div class="metric-item">
+                <span class="metric-val" id="nav-eta-value">--:--</span>
+                <span class="metric-lbl">ETA</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-val" id="nav-remaining-dist">-- km</span>
+                <span class="metric-lbl">Remaining</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-val" id="nav-remaining-time">-- min</span>
+                <span class="metric-lbl">Duration</span>
+              </div>
+            </div>
+
+            <div class="nav-hud-actions">
+              <button id="btn-nav-voice" class="icon-btn active" title="Toggle Voice Guidance">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                </svg>
+              </button>
+              <button id="btn-nav-recenter" class="icon-btn active" title="Follow User Location">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+              <button id="btn-end-navigation" class="btn-end-nav">End</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Outlet Information Popup Card / Bottom Sheet -->
+      <div id="outlet-detail-card">
+        <div class="bottom-sheet-drag-handle"></div>
+
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-title" id="card-outlet-cust-name">Store Name</div>
+            <span id="card-outlet-color-pill" class="card-color-pill">Customer</span>
+          </div>
+          <button id="btn-close-outlet-card" class="card-btn-close" aria-label="Close Store Card">&times;</button>
+        </div>
+
+        <!-- Scrollable details body so buttons are NEVER hidden -->
+        <div class="card-body-scrollable">
+          <!-- Live Route & Travel Time Estimate Banner -->
+          <div class="card-travel-estimate" id="card-travel-estimate">
+            <div class="travel-estimate-header">
+              <div class="travel-estimate-stats">
+                <span class="estimate-time-val" id="card-estimate-time">-- min</span>
+                <span class="estimate-dist-val" id="card-estimate-dist">(-- km)</span>
+              </div>
+              <span class="estimate-route-badge" id="card-estimate-badge" style="display: none;">
+                <span class="traffic-dot"></span>
+                <span id="card-estimate-status">Fastest route</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Google Maps Style Route Waypoints (Origin & Destination) -->
+          <div class="card-waypoints-box">
+            <!-- Starting Point Row -->
+            <div class="waypoint-row">
+              <div class="waypoint-icon-col">
+                <div class="waypoint-dot origin-dot"></div>
+                <div class="waypoint-line"></div>
+              </div>
+              <div class="waypoint-info-col">
+                <span class="waypoint-tag">Starting point</span>
+                <div class="waypoint-val-row">
+                  <span class="waypoint-val-text" id="card-origin-text">Your Location</span>
+                  <button type="button" id="btn-change-origin" class="btn-change-origin" title="Change starting location">Change</button>
+                </div>
+              </div>
+              <button type="button" id="btn-swap-waypoints" class="btn-swap-waypoints" title="Reverse starting point and destination">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Destination Row -->
+            <div class="waypoint-row">
+              <div class="waypoint-icon-col">
+                <div class="waypoint-dot dest-dot"></div>
+              </div>
+              <div class="waypoint-info-col">
+                <span class="waypoint-tag">Destination</span>
+                <div class="waypoint-val-row">
+                  <span class="waypoint-val-text" id="card-dest-text">Store Name</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Starting Location Search & Picker Dropdown -->
+            <div id="origin-picker-panel" class="origin-picker-panel" style="display: none;">
+              <div class="origin-search-row">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input type="text" id="origin-search-input" class="origin-search-field" placeholder="Search any place, apartment, or address worldwide..." autocomplete="off">
+                <button type="button" id="btn-close-origin-picker" class="origin-picker-close" title="Close picker">&times;</button>
+              </div>
+              <div class="origin-quick-options">
+                <button type="button" class="origin-quick-btn" id="btn-origin-gps">
+                  <span>📍</span>
+                  <span>Your Location (GPS)</span>
+                </button>
+                <button type="button" class="origin-quick-btn" id="btn-origin-pick-map">
+                  <span>🗺️</span>
+                  <span>Choose on map</span>
+                </button>
+              </div>
+              <div id="origin-search-results" class="origin-search-results"></div>
+            </div>
+          </div>
+
+          <!-- Outlet Metadata Grid -->
+          <div class="card-details-grid">
+            <div class="card-detail-item">
+              <span class="detail-label">District</span>
+              <span class="detail-val" id="card-outlet-dist-name">DB 1</span>
+            </div>
+            <div class="card-detail-item">
+              <span class="detail-label">Outlet Type</span>
+              <span class="detail-val" id="card-outlet-type">VISI</span>
+            </div>
+            <div class="card-detail-item">
+              <span class="detail-label">Latitude</span>
+              <span class="detail-val font-mono" id="card-outlet-lat">28.453011</span>
+            </div>
+            <div class="card-detail-item">
+              <span class="detail-label">Longitude</span>
+              <span class="detail-val font-mono" id="card-outlet-lng">77.050681</span>
+            </div>
+          </div>
+
+          <div id="card-outlet-total-cust-outlets" style="font-size: 0.72rem; color: var(--text-muted);">
+            14 outlets for this customer
+          </div>
+        </div>
+
+        <!-- Sticky Action Buttons - ALWAYS in visible height -->
+        <div class="card-actions">
+          <button id="btn-outlet-navigate" class="btn-primary-navigate">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+            </svg>
+            <span id="btn-navigate-label">Navigate Here</span>
+            <span id="btn-navigate-badge" class="btn-navigate-eta-badge" style="display: none;"></span>
+          </button>
+          <div class="card-secondary-actions">
+            <button id="btn-outlet-simulate" class="btn-secondary" style="flex: 1;">🚗 Simulate Drive</button>
+            <button id="btn-outlet-copy-coords" class="btn-secondary" title="Copy Coordinates">📋 Coords</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Mode Collapsible Outlet Detail Window (Does NOT block navigation map space) -->
+      <div id="nav-outlet-window" class="nav-outlet-window" style="display: none;" aria-label="Destination Outlet Details Window">
+        <!-- Collapsed Capsule Pill: Click to expand without obstructing driving map -->
+        <button type="button" id="nav-outlet-capsule" class="nav-outlet-capsule" title="Click to view full outlet details" aria-label="Expand Outlet Details">
+          <div class="nav-capsule-left">
+            <span class="nav-capsule-pin">📍</span>
+            <span class="nav-capsule-name" id="nav-capsule-name">Destination Outlet</span>
+            <span class="nav-capsule-pill" id="nav-capsule-pill">Customer</span>
+          </div>
+          <div class="nav-capsule-toggle">
+            <span class="nav-capsule-label">Details</span>
+            <svg class="nav-capsule-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M18 15l-6-6-6 6"/>
+            </svg>
+          </div>
+        </button>
+
+        <!-- Expanded Card: Comprehensive outlet data, copy coordinates & minimize button -->
+        <div id="nav-outlet-expanded-card" class="nav-outlet-expanded-card">
+          <div class="nav-outlet-card-header">
+            <div class="nav-outlet-title-wrap">
+              <div class="nav-outlet-card-title" id="nav-card-cust-name">Store Name</div>
+              <div class="nav-outlet-badge-row">
+                <span id="nav-card-color-pill" class="card-color-pill">Customer</span>
+                <span id="nav-card-total-outlets" class="nav-card-outlets-badge">14 Outlets</span>
+              </div>
+            </div>
+            <button type="button" id="btn-collapse-nav-outlet" class="btn-collapse-nav-outlet" title="Minimize / Collapse Details" aria-label="Collapse Outlet Details">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="nav-outlet-card-body">
+            <div class="nav-outlet-grid">
+              <div class="nav-grid-item">
+                <span class="nav-grid-lbl">District</span>
+                <span class="nav-grid-val" id="nav-card-dist-name">DB 1</span>
+              </div>
+              <div class="nav-grid-item">
+                <span class="nav-grid-lbl">Category</span>
+                <span class="nav-grid-val" id="nav-card-outlet-type">VISI</span>
+              </div>
+              <div class="nav-grid-item">
+                <span class="nav-grid-lbl">Latitude</span>
+                <span class="nav-grid-val font-mono" id="nav-card-lat">28.453011</span>
+              </div>
+              <div class="nav-grid-item">
+                <span class="nav-grid-lbl">Longitude</span>
+                <span class="nav-grid-val font-mono" id="nav-card-lng">77.050681</span>
+              </div>
+            </div>
+
+            <div class="nav-outlet-footer-row">
+              <span class="nav-outlet-status-note" id="nav-card-status-note">
+                <span class="status-radar-dot"></span> Active Destination
+              </span>
+              <button type="button" id="btn-nav-copy-coords" class="btn-nav-copy-coords" title="Copy GPS Coordinates to Clipboard">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span>Copy Coords</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- 1. Initial Location Permission Startup Modal -->
+  <div id="location-prompt-modal" class="modal-backdrop">
+    <div class="modal-box location-modal-box">
+      <div class="modal-icon-badge">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
+        </svg>
+      </div>
+      <div class="modal-header-center">
+        <h2 class="modal-title">Enable Live Location Access?</h2>
+        <p class="modal-subtitle">To show your live position on the map and calculate real-time driving routes to outlets, FleetNav Pro needs location access.</p>
+      </div>
+      
+      <div class="location-features-list">
+        <div class="feature-item">
+          <span class="feature-icon">📍</span>
+          <div>
+            <strong>Instant Origin Departure</strong>
+            <p>Start driving routes directly from where you currently stand without manual pinning.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🧭</span>
+          <div>
+            <strong>Turn-by-Turn GPS Guidance</strong>
+            <p>Live maneuver voice instructions and automatic off-route recalculation.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">⚡</span>
+          <div>
+            <strong>TomTom Live Traffic ETAs</strong>
+            <p>Accurate journey times considering real-time delays on Delhi NCR roads.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-checkbox-row">
+        <label class="modal-checkbox-label">
+          <input type="checkbox" id="chk-location-remember" checked>
+          <span>Remember my preference for future visits</span>
+        </label>
+      </div>
+
+      <div class="modal-actions-stacked">
+        <button id="btn-location-allow" class="btn-modal-primary">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
+          </svg>
+          <span>Allow Location Access</span>
+        </button>
+        <button id="btn-location-skip" class="btn-modal-ghost">Continue with Default Region</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Location Permission Blocked Help Modal -->
+  <div id="location-help-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.3rem;">⚠️</span>
+          <h2 class="modal-title">Location Service Blocked</h2>
+        </div>
+        <button id="btn-close-location-help" class="card-btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.86rem; color: var(--text-secondary); line-height: 1.5;">
+          Your browser has denied or blocked location access for this site. You can still view and filter all 4,345 outlets, but live GPS tracking and automatic origin routes require permission.
+        </p>
+
+        <div class="help-steps-card">
+          <div class="help-step-item">
+            <span class="step-num">1</span>
+            <span>Click the <strong>padlock or site settings icon (🔒 / ⚙️)</strong> on the left side of your browser address bar.</span>
+          </div>
+          <div class="help-step-item">
+            <span class="step-num">2</span>
+            <span>Locate <strong>Location</strong> and switch it from <em>Block</em> to <strong>Allow</strong>.</span>
+          </div>
+          <div class="help-step-item">
+            <span class="step-num">3</span>
+            <span>Click the button below to re-check location without having to refresh the page.</span>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 8px;">
+          <button id="btn-location-retry" class="btn-modal-primary" style="flex: 1;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6M1 20v-6h6"/>
+              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+            </svg>
+            <span>Re-check GPS Permission</span>
+          </button>
+          <button id="btn-dismiss-location-help" class="btn-secondary" style="flex: 0 0 auto;">Dismiss</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Executive Preferences & Settings Modal (No API Keys!) -->
+  <div id="settings-modal" class="modal-backdrop">
+    <div class="modal-box executive-settings-modal">
+      <div class="modal-header">
+        <div class="settings-title-group">
+          <div class="settings-title-badge">COMMAND PREFERENCES</div>
+          <h2 class="modal-title">Executive Display & Telemetry</h2>
+        </div>
+        <button id="btn-close-settings" class="card-btn-close">&times;</button>
+      </div>
+
+      <div class="modal-body settings-modal-body">
+        
+        <!-- Setting 1: Theme Presets -->
+        <div class="setting-section">
+          <div class="setting-section-header">
+            <span class="setting-section-icon">🎨</span>
+            <div>
+              <div class="setting-section-title">Command Center Theme</div>
+              <div class="setting-section-sub">Select visual appearance and luminous accent palette</div>
+            </div>
+          </div>
+          <div class="theme-preset-grid" id="theme-presets-container">
+            <div class="theme-card active" data-theme-val="stealth">
+              <div class="theme-swatch swatch-stealth"></div>
+              <div class="theme-card-info">
+                <span class="theme-name">Obsidian Stealth</span>
+                <span class="theme-desc">Deep black • Neon cyan</span>
+              </div>
+            </div>
+            <div class="theme-card" data-theme-val="midnight">
+              <div class="theme-swatch swatch-midnight"></div>
+              <div class="theme-card-info">
+                <span class="theme-name">Midnight Exec</span>
+                <span class="theme-desc">Navy • Sapphire glow</span>
+              </div>
+            </div>
+            <div class="theme-card" data-theme-val="cyber">
+              <div class="theme-swatch swatch-cyber"></div>
+              <div class="theme-card-info">
+                <span class="theme-name">Cyber Neon</span>
+                <span class="theme-desc">Carbon • Emerald laser</span>
+              </div>
+            </div>
+            <div class="theme-card" data-theme-val="light">
+              <div class="theme-swatch swatch-light"></div>
+              <div class="theme-card-info">
+                <span class="theme-name">Enterprise Light</span>
+                <span class="theme-desc">Crisp daylight • Clean</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Setting 2: Map Visual Basemap -->
+        <div class="setting-section">
+          <div class="setting-section-header">
+            <span class="setting-section-icon">🗺️</span>
+            <div>
+              <div class="setting-section-title">Map Cartography Style</div>
+              <div class="setting-section-sub">Basemap rendering layer and road contrast</div>
+            </div>
+          </div>
+          <select id="settings-map-theme" class="select-dropdown futuristic-select">
+            <option value="google_streets" selected>Google Maps Streets (High-Density &amp; Buildings)</option>
+            <option value="google_hybrid">Google Maps Satellite (Real Buildings &amp; Rooftops)</option>
+            <option value="google_terrain">Google Maps Terrain (Urban &amp; Topography)</option>
+            <option value="osm_dense">OpenStreetMap Detailed (Complete Building Outlines)</option>
+            <option value="tomtom_dark">TomTom Dark Logistics (Official Night)</option>
+            <option value="tomtom_main">TomTom Daylight (Official Day)</option>
+            <option value="dark">CARTO Dark Matter (Minimalist)</option>
+            <option value="voyager">CARTO Voyager Fleet (Balanced Detail)</option>
+            <option value="positron">CARTO Positron (Corporate Minimal)</option>
+          </select>
+        </div>
+
+        <!-- Setting 3: Audio Guidance Synthesizer -->
+        <div class="setting-section">
+          <div class="setting-section-header">
+            <span class="setting-section-icon">🔊</span>
+            <div>
+              <div class="setting-section-title">Voice Telemetry & Announcements</div>
+              <div class="setting-section-sub">Spoken turn-by-turn guidance via Speech Synthesis</div>
+            </div>
+          </div>
+          <div class="setting-row-action">
+            <label class="switch-toggle-label">
+              <input type="checkbox" id="chk-voice-guidance" checked>
+              <span class="switch-slider"></span>
+              <span class="switch-label-text">Enable Voice Navigation</span>
+            </label>
+            <button id="btn-test-voice" type="button" class="btn-small btn-secondary" title="Test Web Speech Engine">
+              🔊 Test Speech Audio
+            </button>
+          </div>
+        </div>
+
+        <!-- Setting 4: Telemetry & Recalculation -->
+        <div class="setting-section">
+          <div class="setting-section-header">
+            <span class="setting-section-icon">⚡</span>
+            <div>
+              <div class="setting-section-title">Autonomous Route Deviation</div>
+              <div class="setting-section-sub">Automatic TomTom recalculation when off-route >60m</div>
+            </div>
+          </div>
+          <div class="setting-row-action">
+            <label class="switch-toggle-label">
+              <input type="checkbox" id="chk-auto-recalculate" checked>
+              <span class="switch-slider"></span>
+              <span class="switch-label-text">Auto-Recalculate On Deviation</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Setting 5: Simulation Speed Default -->
+        <div class="setting-section">
+          <div class="setting-section-header">
+            <span class="setting-section-icon">🚗</span>
+            <div>
+              <div class="setting-section-title">Simulation Drive Speed</div>
+              <div class="setting-section-sub">Virtual vehicle velocity multiplier</div>
+            </div>
+          </div>
+          <div class="segmented-control" id="sim-speed-segmented">
+            <button type="button" class="segment-btn active" data-speed="1">1x (Normal)</button>
+            <button type="button" class="segment-btn" data-speed="2">2x (Express)</button>
+            <button type="button" class="segment-btn" data-speed="5">5x (High Speed)</button>
+            <button type="button" class="segment-btn" data-speed="10">10x (Hyperspeed)</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer settings-footer">
+        <button id="btn-save-settings" class="btn-modal-primary" style="width: 100%;">
+          <span>Apply & Save Preferences</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet & MarkerCluster Libraries -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+
+  <!-- Application Bootstrap -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

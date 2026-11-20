@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FleetNav Admin Portal | Store Database & Dataset Manager</title>
+  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="/admin.css">
+  <link rel="stylesheet" href="/admin/admin.css">
+  <!-- SheetJS for pure client-side Excel (.xlsx / .xls) and CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="admin-navbar">
+    <div class="brand-wrapper">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+          <path d="M12 2C7.58 2 4 5.58 4 10c0 5.25 8 12 8 12s8-6.75 8-12c0-4.42-3.58-8-8-8zm0 11c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/>
+        </svg>
+      </div>
+      <div>
+        <span class="brand-title">FleetNav Admin Portal</span>
+        <span id="admin-security-badge" class="brand-badge" style="margin-left: 8px;">RESTRICTED</span>
+      </div>
+    </div>
+
+    <div class="nav-actions">
+      <button id="btn-open-add-store" class="btn-nav-map" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">
+        <span>+ Add Store</span>
+      </button>
+      <button id="btn-export-csv" class="btn-nav-map">
+        <span>📥 Export</span>
+      </button>
+      <button id="btn-change-passkey" class="btn-nav-map" title="Change Admin Security Key">
+        <span>🔑 Passkey</span>
+      </button>
+      <button id="btn-admin-logout" class="btn-nav-map" style="background: rgba(244, 63, 94, 0.12); color: #fca5a5; border-color: rgba(244, 63, 94, 0.3);" title="Lock Admin Console">
+        <span>🔒 Lock</span>
+      </button>
+      <a href="https://navigation-system3.vercel.app" target="_blank" class="btn-nav-map" title="Open Customer Map View">
+        <span>🗺️ Map View</span>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- Security Access Gate Overlay (Shown when unauthenticated) -->
+  <div id="admin-auth-overlay" class="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-shield-icon">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="M12 8v4m0 4h.01"/>
+          </svg>
+        </div>
+        <span class="auth-badge">RESTRICTED • IN-CHARGE ONLY</span>
+        <h1 class="auth-title">Executive Authorization</h1>
+        <p class="auth-subtitle">Access to live Delhi NCR store coordinates, bulk dataset deployment, and database modification is restricted to authorized personnel.</p>
+      </div>
+
+      <form id="admin-auth-form" class="auth-form">
+        <div class="form-group">
+          <label class="form-label" for="auth-username">In-Charge Identity</label>
+          <input type="text" id="auth-username" class="form-control auth-input" placeholder="Enter username (default: admin)" autocomplete="username" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="auth-passkey">Master Security Passkey / PIN</label>
+          <div class="auth-input-wrapper">
+            <input type="password" id="auth-passkey" class="form-control auth-input" placeholder="Enter security passkey or PIN" autocomplete="current-password" required>
+            <button type="button" id="btn-toggle-auth-pwd" class="btn-toggle-pwd" title="Toggle Visibility">👁️</button>
+          </div>
+        </div>
+
+        <div class="auth-remember-row">
+          <label class="auth-checkbox-label">
+            <input type="checkbox" id="auth-remember-me" checked>
+            <span>Keep session active on this browser</span>
+          </label>
+        </div>
+
+        <div id="auth-error-msg" class="auth-error-banner" style="display: none;">
+          <span>⚠️ Access Denied. Invalid in-charge credentials.</span>
+        </div>
+
+        <div class="auth-actions">
+          <button type="submit" id="btn-submit-auth" class="btn-auth-primary">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <span>Verify & Unlock Portal</span>
+          </button>
+          <a href="https://navigation-system3.vercel.app" class="btn-auth-ghost">
+            <span>&larr; Return to Public Navigation Map</span>
+          </a>
+        </div>
+
+        <div class="auth-credentials-hint">
+          <span>In-Charge Access PIN: <code>2804</code> (or Username: <code>admin</code> / PIN: <code>2804</code>)</span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <main class="admin-container">
+    
+    <!-- Live Stats Overview -->
+    <section class="stats-row">
+      <div class="stat-box">
+        <div class="stat-icon cyan">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+          </svg>
+        </div>
+        <div class="stat-meta">
+          <span class="stat-num" id="stat-total-stores">...</span>
+          <span class="stat-lbl">Total Stores Live</span>
+        </div>
+      </div>
+
+      <div class="stat-box">
+        <div class="stat-icon emerald">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div class="stat-meta">
+          <span class="stat-num" id="stat-valid-stores">...</span>
+          <span class="stat-lbl">Valid Coordinates</span>
+        </div>
+      </div>
+
+      <div class="stat-box">
+        <div class="stat-icon purple">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+          </svg>
+        </div>
+        <div class="stat-meta">
+          <span class="stat-num" id="stat-unique-custs">...</span>
+          <span class="stat-lbl">Combined Customers</span>
+        </div>
+      </div>
+
+      <div class="stat-box">
+        <div class="stat-icon amber">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+            <polyline points="2 17 12 22 22 17"/>
+            <polyline points="2 12 12 17 22 12"/>
+          </svg>
+        </div>
+        <div class="stat-meta">
+          <span class="stat-num" id="stat-districts" style="font-size: 1.1rem;">...</span>
+          <span class="stat-lbl">Active Districts</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Upload & Import Section -->
+    <section class="upload-card">
+      <div class="section-header-row">
+        <div>
+          <h2 class="section-title">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <span>Upload Store Database (Excel or CSV)</span>
+          </h2>
+          <p class="section-desc">Upload a new dataset to append new store locations or replace the entire database. Supports <code>.xlsx</code>, <code>.xls</code>, and <code>.csv</code>.</p>
+        </div>
+      </div>
+
+      <!-- Mode Selection -->
+      <div class="mode-toggle-group">
+        <label class="mode-option-label">
+          <input type="radio" name="import-mode" value="append" checked>
+          <div>
+            <div class="mode-title">Append / Merge New Stores (Recommended)</div>
+            <div class="mode-sub">Add new stores to the existing database without overwriting existing locations.</div>
+          </div>
+        </label>
+
+        <label class="mode-option-label">
+          <input type="radio" name="import-mode" value="replace">
+          <div>
+            <div class="mode-title">Replace Entire Database</div>
+            <div class="mode-sub">Overwrites the current database with the uploaded file (automatic backup created).</div>
+          </div>
+        </label>
+      </div>
+
+      <!-- Drag and Drop Zone -->
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="file-input" accept=".csv, .xlsx, .xls" style="display: none;">
+        <div class="dropzone-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="12" y1="18" x2="12" y2="12"/>
+            <line x1="9" y1="15" x2="15" y2="15"/>
+          </svg>
+        </div>
+        <div>
+          <div class="dropzone-text">Drag & drop your Excel or CSV file here</div>
+          <div class="dropzone-sub">Supports columns: DIST_NAME, CUST_NAME, KEYACCGRP2_DESC, LATITUDE, LONGITUDE</div>
+        </div>
+        <button type="button" id="btn-browse" class="btn-file-browse">Browse Files</button>
+      </div>
+    </section>
+
+    <!-- Preview & Validation Card -->
+    <section id="preview-card" class="preview-card">
+      <div class="preview-header">
+        <div>
+          <h3 class="section-title">Parsed Data Preview & Validation</h3>
+          <div class="preview-stats-pills" style="margin-top: 8px;">
+            <span id="pill-parsed-total" class="pill-stat info">0 Total Rows</span>
+            <span id="pill-parsed-valid" class="pill-stat valid">✓ 0 Valid</span>
+            <span id="pill-parsed-invalid" class="pill-stat invalid">⚠️ 0 Errors</span>
+            <span id="pill-parsed-custs" class="pill-stat info">👥 0 Customers</span>
+          </div>
+        </div>
+
+        <div class="preview-actions-bar" style="display: flex; gap: 10px; align-items: center;">
+          <input type="text" id="preview-search-input" class="form-control" placeholder="Search preview rows..." style="width: 240px; padding: 6px 12px; font-size: 0.8rem;">
+          <button id="btn-deploy-dataset" class="btn-deploy">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/>
+              <polyline points="7 3 7 8 15 8"/>
+            </svg>
+            <span>Save & Deploy to Map</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Preview Table -->
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 60px;">#</th>
+              <th style="width: 90px;">Status</th>
+              <th>Customer Name</th>
+              <th>District</th>
+              <th>Outlet Type</th>
+              <th>Latitude</th>
+              <th>Longitude</th>
+            </tr>
+          </thead>
+          <tbody id="preview-table-body">
+            <!-- Rows dynamically rendered by admin.js -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Footer & Pagination -->
+      <div class="preview-footer">
+        <div id="pagination-info" style="font-size: 0.8rem; color: var(--text-muted);">
+          Page 1 of 1
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <button id="btn-prev-page" class="btn-nav-map" style="padding: 6px 12px; font-size: 0.75rem;">&larr; Previous</button>
+          <button id="btn-next-page" class="btn-nav-map" style="padding: 6px 12px; font-size: 0.75rem;">Next &rarr;</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Add Single Store Modal -->
+  <div id="modal-add-store" class="modal-backdrop">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 class="section-title">Add New Single Store</h3>
+        <button id="btn-close-add-store" style="background: none; border: none; color: var(--text-muted); font-size: 1.4rem; cursor: pointer;">&times;</button>
+      </div>
+
+      <form id="form-add-store" class="form-grid">
+        <div class="form-group full-width">
+          <label class="form-label" for="input-store-cust">Customer / Store Name *</label>
+          <input type="text" id="input-store-cust" class="form-control" placeholder="e.g. 24 SPOT NEW BRANCH" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="input-store-dist">District (DIST_NAME)</label>
+          <input type="text" id="input-store-dist" class="form-control" value="DB 1" placeholder="e.g. DB 1, DB 2, DB 3">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="input-store-type">Outlet Type (KEYACCGRP2_DESC)</label>
+          <input type="text" id="input-store-type" class="form-control" value="VISI" placeholder="e.g. VISI, NVISI">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="input-store-lat">Latitude *</label>
+          <input type="number" step="any" id="input-store-lat" class="form-control" placeholder="e.g. 28.453011" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="input-store-lng">Longitude *</label>
+          <input type="number" step="any" id="input-store-lng" class="form-control" placeholder="e.g. 77.050681" required>
+        </div>
+
+        <div class="form-group full-width" style="margin-top: 10px; display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="submit" class="btn-deploy" style="padding: 10px 20px;">Save Store</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Change Passkey Modal -->
+  <div id="modal-change-passkey" class="modal-backdrop">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 class="section-title">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 2l-2 2m-2-2l2 2"/>
+            <circle cx="7.5" cy="15.5" r="5.5"/>
+            <path d="m11.5 11.5 8.5-8.5v3h3v3l-2.5 2.5"/>
+          </svg>
+          <span>Update Security Passkey</span>
+        </h3>
+        <button type="button" id="btn-close-change-key" class="card-btn-close" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.4rem;">&times;</button>
+      </div>
+
+      <form id="form-change-passkey" style="display: flex; flex-direction: column; gap: 14px;">
+        <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+          Set a new master passkey or security PIN for the in-charge administrator. This custom key will be remembered in your browser.
+        </p>
+
+        <div class="form-group">
+          <label class="form-label" for="input-new-passkey">New Passkey or PIN (Min 4 chars) *</label>
+          <input type="text" id="input-new-passkey" class="form-control" placeholder="Enter new custom passkey" required minlength="4">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+          <button type="button" id="btn-reset-default-key" class="btn-nav-map" style="padding: 8px 14px; font-size: 0.8rem;">Reset to Default</button>
+          <button type="submit" class="btn-deploy" style="padding: 8px 20px; font-size: 0.82rem;">Save New Passkey</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="admin-toast-container"></div>
+
+  <!-- Admin Application Script with cross-path fallbacks -->
+  <script src="admin.js" defer></script>
+  <script src="/admin.js" defer></script>
+  <script src="/admin/admin.js" defer></script>
+</body>
+</html>
