@@ -1,28 +1,43 @@
 /**
- * Universal Global Search API Endpoint (Vercel Serverless Function)
+ * Hardened Universal Global Search API Endpoint (Vercel Serverless Function)
  * Enables worldwide search for any place, apartment, park, landmark, or address
  * Combining TomTom Global Search, Photon Geocoder & OpenStreetMap Nominatim.
+ * Hardened with Rate Limiting, Coordinate Validation, and Input Sanitization.
  */
 
-export default async function handler(req, res) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+import { checkRateLimit } from './_rate-limit.js';
+import { handleCors } from './_cors.js';
+import { validateCoordinates, sanitizeString } from './_security.js';
+import { logSecurityEvent } from './_logger.js';
 
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
+export default async function handler(req, res) {
+  if (handleCors(req, res, { methods: 'GET, OPTIONS' })) {
     return;
+  }
+
+  // Rate Limiting: 120 searches per minute per IP
+  if (!checkRateLimit(req, res, { endpoint: 'search', limit: 120, windowMs: 60 * 1000 })) {
+    return;
+  }
+
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const { q, lat, lon, reverse } = req.query;
 
   // Reverse Geocoding Mode: Convert lat, lon to real road name & address
-  if (reverse === 'true' && lat && lon) {
+  if (reverse === 'true' && lat !== undefined && lon !== undefined) {
+    const coordVal = validateCoordinates(lat, lon, true);
+    if (!coordVal.valid) {
+      return res.status(400).json({ error: `Invalid coordinates for reverse geocoding: ${coordVal.reason}` });
+    }
+
     const TOMTOM_KEY = process.env.TOMTOM_API_KEY || 'mgndztNNLEEhOExutMyrIinaVGoxRpRw';
+
+    // 1. Try TomTom Reverse Geocoding
     try {
-      const ttRes = await fetch(`https://api.tomtom.com/search/2/reverseGeocode/${encodeURIComponent(lat)},${encodeURIComponent(lon)}.json?key=${TOMTOM_KEY}`, {
+      const ttRes = await fetch(`https://api.tomtom.com/search/2/reverseGeocode/${encodeURIComponent(coordVal.lat)},${encodeURIComponent(coordVal.lng)}.json?key=${TOMTOM_KEY}`, {
         signal: AbortSignal.timeout(3000)
       });
       if (ttRes.ok) {
@@ -35,17 +50,18 @@ export default async function handler(req, res) {
             title: title,
             subtitle: subParts.join(', ') || a.freeformAddress,
             fullAddress: a.freeformAddress,
-            lat: parseFloat(lat),
-            lng: parseFloat(lon)
+            lat: coordVal.lat,
+            lng: coordVal.lng
           });
         }
       }
-    } catch (e) {
+    } catch (_) {
       // Fall through to Photon fallback
     }
 
+    // 2. Try Photon Fallback
     try {
-      const pRes = await fetch(`https://photon.komoot.io/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`, {
+      const pRes = await fetch(`https://photon.komoot.io/reverse?lat=${encodeURIComponent(coordVal.lat)}&lon=${encodeURIComponent(coordVal.lng)}`, {
         signal: AbortSignal.timeout(3000)
       });
       if (pRes.ok) {
@@ -58,38 +74,49 @@ export default async function handler(req, res) {
             title,
             subtitle,
             fullAddress: subtitle,
-            lat: parseFloat(lat),
-            lng: parseFloat(lon)
+            lat: coordVal.lat,
+            lng: coordVal.lng
           });
         }
       }
-    } catch (e) {
+    } catch (_) {
       // Ignore
     }
 
     return res.status(200).json({
       title: 'Dropped Pin',
-      subtitle: `${lat}, ${lon}`,
-      fullAddress: `${lat}, ${lon}`,
-      lat: parseFloat(lat),
-      lng: parseFloat(lon)
+      subtitle: `${coordVal.lat}, ${coordVal.lng}`,
+      fullAddress: `${coordVal.lat}, ${coordVal.lng}`,
+      lat: coordVal.lat,
+      lng: coordVal.lng
     });
   }
 
-  if (!q || q.trim().length < 2) {
+  // Forward Place / Address Search Mode
+  const cleanQuery = sanitizeString(q, 100);
+  if (!cleanQuery || cleanQuery.length < 2) {
     return res.status(200).json({ results: [] });
   }
 
-  const cleanQuery = q.trim();
+  let focusLat = null;
+  let focusLon = null;
+  if (lat !== undefined && lon !== undefined) {
+    const val = validateCoordinates(lat, lon, true);
+    if (val.valid) {
+      focusLat = val.lat;
+      focusLon = val.lng;
+    }
+  }
+
   const TOMTOM_KEY = process.env.TOMTOM_API_KEY || 'mgndztNNLEEhOExutMyrIinaVGoxRpRw';
 
-  // Run TomTom, Photon, and Nominatim concurrently for maximum coverage & zero missing locations
+  // Run TomTom, Photon, and Nominatim concurrently
   const [ttResult, photonResult, nomResult] = await Promise.allSettled([
     // 1. TomTom Search API
     (async () => {
       let url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(cleanQuery)}.json?key=${TOMTOM_KEY}&typeahead=true&limit=8&language=en-US`;
-      if (lat && lon) {
-        url += `&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&radius=100000`;
+      if (focusLat !== null && focusLon !== null) {
+        url += `&lat=${encodeURIComponent(focusLat)}&lon=${encodeURIComponent(focusLon)}&radius=100000`;
       }
       const r = await fetch(url, { signal: AbortSignal.timeout(3000) });
       if (!r.ok) return [];
@@ -124,11 +151,11 @@ export default async function handler(req, res) {
       }).filter(Boolean);
     })(),
 
-    // 2. Photon Geocoder (OSM-based, high performance)
+    // 2. Photon Geocoder (OSM-based)
     (async () => {
       let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(cleanQuery)}&limit=8`;
-      if (lat && lon) {
-        url += `&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+      if (focusLat !== null && focusLon !== null) {
+        url += `&lat=${encodeURIComponent(focusLat)}&lon=${encodeURIComponent(focusLon)}`;
       }
       const r = await fetch(url, { signal: AbortSignal.timeout(3000) });
       if (!r.ok) return [];
@@ -153,7 +180,7 @@ export default async function handler(req, res) {
       }).filter(Boolean);
     })(),
 
-    // 3. Nominatim (OpenStreetMap authoritative geocoder for apartments & local parks)
+    // 3. Nominatim
     (async () => {
       const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cleanQuery)}&format=json&limit=6&addressdetails=1`;
       const r = await fetch(url, {
@@ -186,9 +213,7 @@ export default async function handler(req, res) {
   const photonList = photonResult.status === 'fulfilled' ? photonResult.value : [];
   const nomList = nomResult.status === 'fulfilled' ? nomResult.value : [];
 
-  // Merge and deduplicate by proximity (<120m) or identical title
   const merged = [];
-
   const addItems = (list) => {
     for (const item of list) {
       if (!item) continue;
@@ -207,7 +232,6 @@ export default async function handler(req, res) {
     }
   };
 
-  // Prioritize Photon and TomTom POIs, augmented by Nominatim
   addItems(ttList);
   addItems(photonList);
   addItems(nomList);

@@ -1,47 +1,88 @@
+/**
+ * Hardened Single Store Creation API Endpoint
+ * Requires Operator or Admin Authorization, enforces rate limiting,
+ * coordinate bounds validation (-90..90, -180..180), and formula injection sanitization.
+ */
+
 import fs from 'fs';
 import { getDataFilePath, getDatasetStats } from './_db.js';
+import { requireRole, ROLES } from './_auth.js';
+import { checkRateLimit } from './_rate-limit.js';
+import { handleCors } from './_cors.js';
+import { logSecurityEvent } from './_logger.js';
+import { sanitizeCsvCell, validateCoordinates, sanitizeString } from './_security.js';
 
 export default function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
+  if (handleCors(req, res, { methods: 'POST, OPTIONS' })) {
+    return;
   }
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // 1. Enforce RBAC: Operator or Admin role required
+  if (!requireRole(req, res, ROLES.OPERATOR)) {
+    return;
+  }
+
+  // 2. Rate limiting: 60 store additions per hour per IP
+  if (!checkRateLimit(req, res, { endpoint: 'add_store', limit: 60, windowMs: 60 * 60 * 1000 })) {
+    return;
+  }
+
   try {
     const { distName, custName, outletType, lat, lng } = req.body || {};
 
-    if (!custName || !lat || !lng) {
+    if (!custName || lat === undefined || lng === undefined) {
       return res.status(400).json({ error: 'Customer Name, Latitude, and Longitude are required' });
     }
 
-    const cleanDist = (distName || 'DB 1').replace(/,/g, ' ');
-    const cleanCust = custName.replace(/,/g, ' ').replace(/"/g, '""');
-    const cleanType = (outletType || 'VISI').replace(/,/g, ' ');
-    const parsedLat = parseFloat(lat);
-    const parsedLng = parseFloat(lng);
-
-    if (isNaN(parsedLat) || isNaN(parsedLng)) {
-      return res.status(400).json({ error: 'Invalid numeric coordinates' });
+    const cleanCustName = sanitizeString(custName, 150);
+    if (cleanCustName.length < 2) {
+      return res.status(400).json({ error: 'Customer Name must be at least 2 characters' });
     }
 
+    // 3. Coordinate Bounds Validation
+    const coordVal = validateCoordinates(lat, lng, false);
+    if (!coordVal.valid) {
+      return res.status(400).json({ error: `Invalid coordinates: ${coordVal.reason}` });
+    }
+
+    // 4. Formula Injection Defense
+    const cleanDist = sanitizeCsvCell(sanitizeString(distName || 'DB 1', 50));
+    const safeCust = sanitizeCsvCell(cleanCustName).replace(/"/g, '""');
+    const cleanType = sanitizeCsvCell(sanitizeString(outletType || 'VISI', 50));
+
     const filePath = getDataFilePath();
-    const newRow = `\n${cleanDist},"${cleanCust}",${cleanType},${parsedLat},${parsedLng}`;
+    const newRow = `\n${cleanDist},"${safeCust}",${cleanType},${coordVal.lat},${coordVal.lng}`;
     fs.appendFileSync(filePath, newRow, 'utf8');
 
     const stats = getDatasetStats();
+
+    logSecurityEvent('STORE_CREATED', {
+      req,
+      status: 'SUCCESS',
+      meta: {
+        custName: cleanCustName,
+        distName: cleanDist,
+        lat: coordVal.lat,
+        lng: coordVal.lng
+      }
+    });
+
     return res.status(200).json({
       success: true,
-      message: `Store '${custName}' added successfully!`,
+      message: `Store '${cleanCustName}' added successfully!`,
       stats
     });
+
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    logSecurityEvent('STORE_CREATION_ERROR', {
+      req,
+      status: 'ERROR',
+      meta: { error: err.message }
+    });
+    return res.status(500).json({ error: 'Failed to create store record.' });
   }
 }

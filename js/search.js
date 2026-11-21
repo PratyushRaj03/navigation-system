@@ -370,9 +370,9 @@ export class SearchEngine {
           <div class="result-color-indicator" style="background-color: ${colorHex}"></div>
           <div class="result-info">
             <div class="result-title">${this.highlightMatch(res.title, query)}</div>
-            <div class="result-subtitle">${res.subtitle}</div>
+            <div class="result-subtitle">${this.escapeHtml(res.subtitle)}</div>
           </div>
-          <span class="result-badge global-badge">${res.badgeText}</span>
+          <span class="result-badge global-badge">${this.escapeHtml(res.badgeText)}</span>
           <button class="btn-quick-nav" title="Navigate immediately" data-index="${index}" aria-label="Start Navigation">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">
               <polygon points="3 11 22 2 13 21 11 13 3 11"/>

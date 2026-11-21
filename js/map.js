@@ -6,6 +6,10 @@
 
 import { CONFIG } from '../config/config.js';
 
+function escapeHtml(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 export class MapManager {
   constructor(containerId = 'map') {
     this.containerId = containerId;
@@ -209,8 +213,8 @@ export class MapManager {
       // Bind concise tooltip on hover
       marker.bindTooltip(`
         <div class="map-tooltip">
-          <div class="tooltip-header" style="border-left-color: ${outlet.color.hex}">${outlet.custName}</div>
-          <div class="tooltip-sub">${outlet.distName} &bull; ${outlet.outletType}</div>
+          <div class="tooltip-header" style="border-left-color: ${escapeHtml(outlet.color?.hex || '#3b82f6')}">${escapeHtml(outlet.custName)}</div>
+          <div class="tooltip-sub">${escapeHtml(outlet.distName)} &bull; ${escapeHtml(outlet.outletType)}</div>
         </div>
       `, {
         direction: 'top',
@@ -293,8 +297,8 @@ export class MapManager {
 
       this._searchPlaceMarker.bindTooltip(`
         <div class="map-tooltip">
-          <div class="tooltip-header" style="border-left-color: ${outlet.color?.hex || '#00f0ff'}">${outlet.custName}</div>
-          <div class="tooltip-sub">${outlet.distName || 'Searched Destination'} &bull; ${outlet.outletType || 'Place'}</div>
+          <div class="tooltip-header" style="border-left-color: ${escapeHtml(outlet.color?.hex || '#00f0ff')}">${escapeHtml(outlet.custName)}</div>
+          <div class="tooltip-sub">${escapeHtml(outlet.distName || 'Searched Destination')} &bull; ${escapeHtml(outlet.outletType || 'Place')}</div>
         </div>
       `, { direction: 'top', offset: [0, -32], opacity: 0.95 }).openTooltip();
     }
@@ -329,7 +333,7 @@ export class MapManager {
       zIndexOffset: 2500
     }).addTo(this.map);
 
-    this._customOriginMarker.bindTooltip(`Starting point: ${origin.name || 'Custom Origin'}`, {
+    this._customOriginMarker.bindTooltip(`Starting point: ${escapeHtml(origin.name || 'Custom Origin')}`, {
       direction: 'top',
       offset: [0, -16],
       opacity: 0.95
@@ -700,7 +704,7 @@ export class MapManager {
     this.customOriginMarker.bindPopup(`
       <div style="font-family: inherit; font-size: 0.8rem; padding: 2px;">
         <strong style="color: #0284c7;">Starting Point (A)</strong><br>
-        <span>${origin.name || `${origin.lat.toFixed(5)}, ${origin.lng.toFixed(5)}`}</span>
+        <span>${escapeHtml(origin.name || `${origin.lat.toFixed(5)}, ${origin.lng.toFixed(5)}`)}</span>
       </div>
     `);
   }

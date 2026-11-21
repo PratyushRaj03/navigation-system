@@ -1,7 +1,8 @@
 /**
- * Modular Routing Service
- * Provides a unified routing interface supporting TomTom Traffic-Aware Routing API v1
- * with automatic fallback and alternative route management.
+ * Modular Routing Service (Hardened)
+ * Provides a unified routing interface supporting secure serverless proxy (/api/route)
+ * and TomTom Traffic-Aware Routing API v1 with automatic fallback, coordinate bounds validation,
+ * vehicle type support (car, bike, truck, pedestrian), and alternative route management.
  */
 
 import { CONFIG } from '../config/config.js';
@@ -22,6 +23,7 @@ export class RouteResult {
     instructions = [], // Array of Instruction objects
     trafficAware = true,
     provider = 'TomTom',
+    vehicle = 'car',
     departureTime = null,
     arrivalTime = null,
     sections = []
@@ -37,6 +39,7 @@ export class RouteResult {
     this.instructions = instructions;
     this.trafficAware = trafficAware;
     this.provider = provider;
+    this.vehicle = vehicle;
     this.departureTime = departureTime || new Date();
     this.arrivalTime = arrivalTime || new Date(Date.now() + travelTimeSeconds * 1000);
     this.sections = sections;
@@ -88,8 +91,18 @@ export class BaseRoutingProvider {
 }
 
 /**
- * Official TomTom Routing API v1 Adapter
- * Supports real-time traffic, incidents, closed roads, alternatives, and turn-by-turn guidance.
+ * Validates coordinate pair
+ */
+function isValidCoord(coord) {
+  if (!coord || typeof coord !== 'object') return false;
+  const lat = typeof coord.lat === 'number' ? coord.lat : parseFloat(coord.lat);
+  const lng = typeof coord.lng === 'number' ? coord.lng : parseFloat(coord.lng);
+  return !isNaN(lat) && !isNaN(lng) && isFinite(lat) && isFinite(lng) &&
+         lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+
+/**
+ * Official TomTom Routing API v1 Adapter with Serverless Proxy & Defense-in-Depth
  */
 export class TomTomRoutingAdapter extends BaseRoutingProvider {
   constructor() {
@@ -98,33 +111,75 @@ export class TomTomRoutingAdapter extends BaseRoutingProvider {
   }
 
   /**
-   * Request routes from TomTom Routing API
+   * Request routes with coordinate validation & vehicle modes
    * @param {object} origin { lat, lng }
    * @param {object} destination { lat, lng }
-   * @param {object} options
+   * @param {object} options { vehicle, maxAlternatives, stops }
    * @returns {Promise<{ primaryRoute: RouteResult, alternativeRoutes: RouteResult[], allRoutes: RouteResult[] }>}
    */
   async calculateRoute(origin, destination, options = {}) {
-    const apiKey = CONFIG.getTomTomApiKey();
+    // 1. Client-Side Coordinate Validation
+    if (!isValidCoord(origin)) {
+      throw new Error('Invalid origin coordinates: latitude must be -90..90 and longitude -180..180');
+    }
+    if (!isValidCoord(destination)) {
+      throw new Error('Invalid destination coordinates: latitude must be -90..90 and longitude -180..180');
+    }
 
+    const vehicle = (options.vehicle || 'car').toLowerCase();
+    const maxAlternatives = options.maxAlternatives !== undefined ? options.maxAlternatives : 2;
+
+    // 2. Try Serverless Proxy Endpoint First (Keeps API key secure on server)
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      try {
+        const proxyUrl = new URL('/api/route', window.location.origin);
+        proxyUrl.searchParams.append('originLat', origin.lat);
+        proxyUrl.searchParams.append('originLng', origin.lng);
+        proxyUrl.searchParams.append('destLat', destination.lat);
+        proxyUrl.searchParams.append('destLng', destination.lng);
+        proxyUrl.searchParams.append('vehicle', vehicle);
+        proxyUrl.searchParams.append('maxAlternatives', maxAlternatives.toString());
+
+        const proxyRes = await fetch(proxyUrl.toString(), {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(6000)
+        });
+
+        if (proxyRes.ok) {
+          const data = await proxyRes.json();
+          if (data.routes && data.routes.length > 0) {
+            return this.parseTomTomRoutes(data.routes, vehicle);
+          }
+        }
+      } catch (_) {
+        // Fall through to direct call or road simulation
+      }
+    }
+
+    // 3. Direct TomTom API Fallback
+    const apiKey = CONFIG.getTomTomApiKey();
     if (!apiKey || apiKey === 'YOUR_TOMTOM_API_KEY') {
       console.warn('[TomTomAdapter] No valid TomTom API key found. Falling back to local road network simulation.');
       return this.fallbackRoadRoute(origin, destination, options);
     }
 
     const locations = `${origin.lat},${origin.lng}:${destination.lat},${destination.lng}`;
-    const maxAlternatives = options.maxAlternatives !== undefined ? options.maxAlternatives : 2;
+    let travelMode = 'car';
+    if (vehicle === 'bike' || vehicle === 'bicycle') travelMode = 'bicycle';
+    else if (vehicle === 'truck') travelMode = 'truck';
+    else if (vehicle === 'pedestrian') travelMode = 'pedestrian';
 
     const url = new URL(`https://api.tomtom.com/routing/1/calculateRoute/${locations}/json`);
     url.searchParams.append('key', apiKey);
     url.searchParams.append('traffic', 'true');
-    url.searchParams.append('travelMode', 'car');
+    url.searchParams.append('travelMode', travelMode);
     url.searchParams.append('routeType', 'fastest');
     url.searchParams.append('computeTravelTimeFor', 'all');
     url.searchParams.append('instructionsType', 'text');
     url.searchParams.append('language', 'en-GB');
     url.searchParams.append('sectionType', 'traffic');
-    if (maxAlternatives > 0) {
+    if (maxAlternatives > 0 && travelMode !== 'pedestrian' && travelMode !== 'bicycle') {
       url.searchParams.append('maxAlternatives', maxAlternatives.toString());
     }
 
@@ -160,92 +215,97 @@ export class TomTomRoutingAdapter extends BaseRoutingProvider {
         throw new Error('No route could be calculated between these locations.');
       }
 
-      const parsedRoutes = data.routes.map((rawRoute, idx) => {
-        const summary = rawRoute.summary || {};
-        const legs = rawRoute.legs || [];
-        const guidance = rawRoute.guidance || {};
-
-        // Extract coordinate points [lat, lng]
-        const coordinates = [];
-        for (const leg of legs) {
-          if (leg.points) {
-            for (const pt of leg.points) {
-              coordinates.push([pt.latitude, pt.longitude]);
-            }
-          }
-        }
-
-        // Extract turn-by-turn guidance instructions
-        const rawInstructions = guidance.instructions || [];
-        const instructions = rawInstructions.map((inst, iIdx) => {
-          const maneuverType = this.normalizeManeuver(inst.maneuver || inst.instructionType, inst.turnAngleInDecimalDegrees);
-          return {
-            id: `inst-${idx}-${iIdx}`,
-            message: inst.message || 'Continue along the route',
-            street: inst.street || '',
-            point: inst.point ? [inst.point.latitude, inst.point.longitude] : null,
-            routeOffsetMeters: inst.routeOffsetInMeters || 0,
-            travelTimeSeconds: inst.travelTimeInSeconds || 0,
-            maneuver: maneuverType,
-            turnAngle: inst.turnAngleInDecimalDegrees || 0
-          };
-        });
-
-        // Ensure at least start and end instructions exist
-        if (instructions.length === 0 && coordinates.length > 0) {
-          instructions.push({
-            id: `inst-${idx}-start`,
-            message: 'Head towards your destination',
-            point: coordinates[0],
-            routeOffsetMeters: 0,
-            travelTimeSeconds: 0,
-            maneuver: 'straight'
-          });
-          instructions.push({
-            id: `inst-${idx}-end`,
-            message: 'You have arrived at the destination',
-            point: coordinates[coordinates.length - 1],
-            routeOffsetMeters: summary.lengthInMeters || 0,
-            travelTimeSeconds: summary.travelTimeInSeconds || 0,
-            maneuver: 'destination'
-          });
-        }
-
-        const isPrimary = idx === 0;
-        const name = isPrimary 
-          ? 'Recommended (Fastest with Traffic)' 
-          : `Alternative Route ${idx}`;
-
-        return new RouteResult({
-          id: `route-${idx}`,
-          name: name,
-          isPrimary: isPrimary,
-          distanceMeters: summary.lengthInMeters || 0,
-          travelTimeSeconds: summary.travelTimeInSeconds || 0,
-          noTrafficTravelTimeSeconds: summary.noTrafficTravelTimeInSeconds || summary.travelTimeInSeconds || 0,
-          trafficDelaySeconds: summary.trafficDelayInSeconds || 0,
-          coordinates: coordinates,
-          instructions: instructions,
-          trafficAware: true,
-          provider: 'TomTom',
-          departureTime: summary.departureTime ? new Date(summary.departureTime) : new Date(),
-          arrivalTime: summary.arrivalTime ? new Date(summary.arrivalTime) : new Date(Date.now() + (summary.travelTimeInSeconds || 0) * 1000),
-          sections: rawRoute.sections || []
-        });
-      });
-
-      return {
-        primaryRoute: parsedRoutes[0],
-        alternativeRoutes: parsedRoutes.slice(1),
-        allRoutes: parsedRoutes,
-        trafficAware: true
-      };
+      return this.parseTomTomRoutes(data.routes, vehicle);
 
     } catch (error) {
       console.error('[TomTomAdapter Error]', error);
-      // If TomTom fails due to network/key, inform user and provide high-fidelity road route
       throw error;
     }
+  }
+
+  /**
+   * Transforms raw TomTom route objects into standardized RouteResult models
+   */
+  parseTomTomRoutes(rawRoutes, vehicle = 'car') {
+    const parsedRoutes = rawRoutes.map((rawRoute, idx) => {
+      const summary = rawRoute.summary || {};
+      const legs = rawRoute.legs || [];
+      const guidance = rawRoute.guidance || {};
+
+      const coordinates = [];
+      for (const leg of legs) {
+        if (leg.points) {
+          for (const pt of leg.points) {
+            coordinates.push([pt.latitude, pt.longitude]);
+          }
+        }
+      }
+
+      const rawInstructions = guidance.instructions || [];
+      const instructions = rawInstructions.map((inst, iIdx) => {
+        const maneuverType = this.normalizeManeuver(inst.maneuver || inst.instructionType, inst.turnAngleInDecimalDegrees);
+        return {
+          id: `inst-${idx}-${iIdx}`,
+          message: inst.message || 'Continue along the route',
+          street: inst.street || '',
+          point: inst.point ? [inst.point.latitude, inst.point.longitude] : null,
+          routeOffsetMeters: inst.routeOffsetInMeters || 0,
+          travelTimeSeconds: inst.travelTimeInSeconds || 0,
+          maneuver: maneuverType,
+          turnAngle: inst.turnAngleInDecimalDegrees || 0
+        };
+      });
+
+      if (instructions.length === 0 && coordinates.length > 0) {
+        instructions.push({
+          id: `inst-${idx}-start`,
+          message: 'Head towards your destination',
+          point: coordinates[0],
+          routeOffsetMeters: 0,
+          travelTimeSeconds: 0,
+          maneuver: 'straight'
+        });
+        instructions.push({
+          id: `inst-${idx}-end`,
+          message: 'You have arrived at the destination',
+          point: coordinates[coordinates.length - 1],
+          routeOffsetMeters: summary.lengthInMeters || 0,
+          travelTimeSeconds: summary.travelTimeInSeconds || 0,
+          maneuver: 'destination'
+        });
+      }
+
+      const isPrimary = idx === 0;
+      const vehicleLabel = vehicle ? ` (${vehicle.toUpperCase()})` : '';
+      const name = isPrimary 
+        ? `Recommended (Fastest)${vehicleLabel}` 
+        : `Alternative Route ${idx}${vehicleLabel}`;
+
+      return new RouteResult({
+        id: `route-${idx}`,
+        name: name,
+        isPrimary: isPrimary,
+        distanceMeters: summary.lengthInMeters || 0,
+        travelTimeSeconds: summary.travelTimeInSeconds || 0,
+        noTrafficTravelTimeSeconds: summary.noTrafficTravelTimeInSeconds || summary.travelTimeInSeconds || 0,
+        trafficDelaySeconds: summary.trafficDelayInSeconds || 0,
+        coordinates: coordinates,
+        instructions: instructions,
+        trafficAware: true,
+        provider: 'TomTom',
+        vehicle: vehicle,
+        departureTime: summary.departureTime ? new Date(summary.departureTime) : new Date(),
+        arrivalTime: summary.arrivalTime ? new Date(summary.arrivalTime) : new Date(Date.now() + (summary.travelTimeInSeconds || 0) * 1000),
+        sections: rawRoute.sections || []
+      });
+    });
+
+    return {
+      primaryRoute: parsedRoutes[0],
+      alternativeRoutes: parsedRoutes.slice(1),
+      allRoutes: parsedRoutes,
+      trafficAware: true
+    };
   }
 
   /**
@@ -288,7 +348,6 @@ export class TomTomRoutingAdapter extends BaseRoutingProvider {
 
   /**
    * Fallback Road Route Generator (used when key is omitted or for testing offline)
-   * Generates realistic road-network waypoints with realistic turns and ETA.
    */
   fallbackRoadRoute(origin, destination, options = {}) {
     const lat1 = origin.lat;
@@ -296,7 +355,6 @@ export class TomTomRoutingAdapter extends BaseRoutingProvider {
     const lat2 = destination.lat;
     const lng2 = destination.lng;
 
-    // Great circle distance in meters
     const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
@@ -306,17 +364,12 @@ export class TomTomRoutingAdapter extends BaseRoutingProvider {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const straightDist = R * c;
 
-    // Road winding factor (roads are typically 1.25x - 1.4x straight line distance)
     const roadDistanceMeters = Math.round(straightDist * 1.32);
-
-    // Multi-segment road geometry generation (simulating actual road network turns)
     const points = [];
     const numWaypoints = Math.max(8, Math.min(60, Math.floor(roadDistanceMeters / 150)));
 
-    // Generate intermediate waypoints with slight road Manhattan/arterial grid turns
     for (let i = 0; i <= numWaypoints; i++) {
       const t = i / numWaypoints;
-      // Perpendicular jitter to simulate road grid routing
       const perpWiggle = Math.sin(t * Math.PI * 3) * (0.0012 * (1 - Math.abs(2 * t - 1)));
       const cosPerp = -dLng * perpWiggle;
       const sinPerp = dLat * perpWiggle;
@@ -326,7 +379,6 @@ export class TomTomRoutingAdapter extends BaseRoutingProvider {
       points.push([pLat, pLng]);
     }
 
-    // Realistic urban speed: ~32 km/h average with moderate traffic
     const avgSpeedKmh = 32;
     const noTrafficSeconds = Math.round((roadDistanceMeters / 1000) / (avgSpeedKmh * 1.25) * 3600);
     const travelTimeSeconds = Math.round((roadDistanceMeters / 1000) / avgSpeedKmh * 3600);
@@ -405,48 +457,25 @@ export class TomTomRoutingAdapter extends BaseRoutingProvider {
 
 /**
  * Universal Routing Service Facade
- * Delegates calls to the configured routing adapter.
  */
 export class RoutingService {
   constructor(adapter = new TomTomRoutingAdapter()) {
     this.adapter = adapter;
   }
 
-  /**
-   * Set active routing adapter
-   * @param {BaseRoutingProvider} adapter 
-   */
   setAdapter(adapter) {
     this.adapter = adapter;
   }
 
-  /**
-   * Calculate route from origin to destination
-   * @param {object} origin { lat, lng }
-   * @param {object} destination { lat, lng }
-   * @param {object} options
-   * @returns {Promise<{ primaryRoute: RouteResult, alternativeRoutes: RouteResult[], allRoutes: RouteResult[] }>}
-   */
   async calculateRoute(origin, destination, options = {}) {
     return this.adapter.calculateRoute(origin, destination, options);
   }
 
-  /**
-   * Recalculate route after user off-route deviation
-   * @param {object} currentPosition { lat, lng }
-   * @param {object} destination { lat, lng }
-   * @param {object} options
-   * @returns {Promise<{ primaryRoute: RouteResult, alternativeRoutes: RouteResult[], allRoutes: RouteResult[] }>}
-   */
   async recalculateRoute(currentPosition, destination, options = {}) {
     console.info('[RoutingService] Recalculating route from updated position:', currentPosition);
     return this.adapter.calculateRoute(currentPosition, destination, { ...options, isRecalculation: true });
   }
 
-  /**
-   * Returns formatted traffic-aware ETA breakdown
-   * @param {RouteResult} route 
-   */
   getTrafficAwareETA(route) {
     if (!route) return null;
     return {
